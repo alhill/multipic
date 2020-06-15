@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import styled from 'styled-components'
 import Jimp from 'jimp'
 
@@ -23,8 +23,8 @@ function App() {
                         original: reader.result
                     })
                     if(arr.length === i + 1){
-                        setInputPicsState(filesReady)
-                        inputPics.current = filesReady
+                        setInputPicsState([...(inputPics.current ?? []), ...filesReady])
+                        inputPics.current = [...(inputPics.current ?? []), ...filesReady]
                     }
                 }
                 else{ 
@@ -130,7 +130,7 @@ function App() {
             return
         }
 
-        inputPics.current.map((ip, i, arr) => {
+        inputPics.current.forEach((ip, i, arr) => {
             setWorking("Reading input pics")
             Jimp.read(ip.original, (err, pic) => {
 
@@ -180,26 +180,38 @@ function App() {
     }
     
     return (
-        <Container>
+        <Container working={working}>
             { working && <Loader><span>{ working }</span></Loader> }
 
             <H1 style={{ marginTop: 0 }}>Multipic</H1>
             
             <Block>
-                <H3>Input files</H3>
-                <input type="file" multiple onChange={e => loadFiles(e.target.files, "input")} />
-                <ImageGrid>
-                    { inputPicsState?.length > 0 && inputPicsState?.map((pic, i) => <Image key={`ip-${i}`} src={pic.original} /> )}
-                </ImageGrid>
+                <H3>Input images</H3>
+                <CustomFile htmlFor="file-upload-input">
+                    Select images
+                </CustomFile>
+                <input id="file-upload-input" type="file" multiple onChange={e => loadFiles(e.target.files, "input")} />
+                { inputPicsState?.length > 0 && (
+                    <ImageGrid>
+                        { inputPicsState?.map((pic, i) => <Image key={`ip-${i}`} src={pic.original} onClick={() => {
+                            const filteredArray = inputPicsState.filter((ip, j) => i !== j)
+                            setInputPicsState(filteredArray)
+                            inputPics.current = filteredArray
+                        }} /> ) }
+                    </ImageGrid>
+                )}
             </Block>
             
             <Block>
                 <H3>Reference image</H3>
-                <input type="file" onChange={e => loadFiles(e.target.files, "ref")} />
+                <CustomFile htmlFor="file-upload-ref">
+                    Select image
+                </CustomFile>
+                <input id="file-upload-ref" type="file" onChange={e => loadFiles(e.target.files, "ref")} />
                 { refPic && (
                     <div>
                         <br />
-                        <Image src={refPic} />
+                        <Image src={refPic} style={{ width: 200, height: 200 }} onClick={() => setRefPic()} />
                     </div>
                 )}
             </Block>
@@ -217,9 +229,15 @@ function App() {
             </Block>
 
             <br />
-            <TheButton onClick={() => moveYourMoneyMaker()}>Hacer cosas</TheButton>
+            <TheButton onClick={() => moveYourMoneyMaker()}>Let's go!</TheButton>
 
-            { done && <Result src={result} /> }
+            { done && (
+                <div style={{ width: "calc(100% - 4em)", marginTop: "3em" }}>
+                    <H3>Result</H3>
+                    <Result src={result} />
+                    <TheButton onClick={e => e} style={{ marginTop: "1em" }}>Download image</TheButton>
+                </div>
+            )}
         </Container>
 
     );
@@ -232,6 +250,8 @@ const Container = styled.div`
     align-items: center;
     position: relative;
     padding-bottom: 1em;
+    height: ${({ working }) => working ? "100vh" : "auto"};
+    overflow: hidden;
 `
 
 const Loader = styled.div`
@@ -242,28 +262,34 @@ const Loader = styled.div`
     height: 100%;
     min-height: 100vh;
     z-index: 100;
-    background-color: rgba(222, 222, 222, 0.9);
+    background-color: rgba(240, 240, 240, 0.9);
     display: flex;
     align-items: center;
     justify-content: center;
+    text-align: center;
     span {
-        font-size: 2em;
+        font-size: 1.8em;
     }
 `
 
 const H1 = styled.h1`
-    margin: 0;
-    padding: 0.5em 0 0 1em;
-`
-
-const H3 = styled.h3`
+    margin: 1em 0;
+    padding: 1em 0 0 0;
+    color: #666;
+    font-size: 3em;
+    font-family: Lexend Tera;
+    `
+    
+    const H3 = styled.h3`
+    font-family: Lexend Tera;
     margin-top: 0;
+    color: #555;
 `
 
 const ImageGrid = styled.div`
     display: flex;
     flex-wrap: wrap;
-    margin-top: 1em;
+    margin-top: 2em;
 `
 const Image = styled.img`
     border-radius: 4px;
@@ -271,14 +297,20 @@ const Image = styled.img`
     height: 100px;
     object-fit: cover;
     object-position: center center;
-    margin: 0 10px 10px 0;
+    margin: 0 1em 1em 0;
+    transition: all 300ms;
+    box-shadow: 1px 1px 3px 1px rgba(0, 0, 0, 0.1);    
+    &:hover{
+        filter: saturate(0.5) brightness(0.5);
+        transform: scale(1.1);
+    }
 `
 const Block = styled.div`
     padding: 1em;
     margin-top: 1em;
-    border: 1px solid gainsboro;
-    border-radius: 8px;
-    width: 95vw;
+    border-radius: 2px;
+    background: linear-gradient(45deg, rgba(56,239,125, 0.2), rgba(17,153,142, 0.2));
+    width: calc(100% - 4em);
 `
 
 const InputGroup = styled.div`
@@ -287,33 +319,64 @@ const InputGroup = styled.div`
     align-items: center;
     label{
         margin-right: 1em;
+        color: #555;
+        width: 200px;
     }
     input {
         height: 24px;
+        padding: 6px;
+        font-family: Lexend Tera;
+        color: #555;
+        background-color: rgba(255, 255, 255, 0.7);
+        border-radius: 2px;
+        font-size: 1.3em;
+        border: none;
+        width: 100px;
     }
 ` 
 
 const TheButton = styled.div`
-    width: 140px;
+    width: 240px;
     height: 40px;
-    background-color: gainsboro;
-    border-radius: 20px;
+    background-color: #555;
+    color: #fcfcfc;
+    border-radius: 2px;
     display: flex;
     justify-content: center;
     align-items: center;
     font-weight: bold;
     transition: all 100ms;
-    box-shadow: 1px 1px 0 grey;
+    box-shadow: 1px 1px 0 #bbb;
+    cursor: pointer;
     &:hover{
         filter: brightness(0.95);
-        box-shadow: 3px 3px 0 grey;    
+        box-shadow: 5px 5px 0 #ccc;    
     }
 `
 
 const Result = styled.img`
-    margin-top: 1em;
+    width: 600px;
     max-width: 90vw;
 `
+
+const CustomFile = styled.label`
+    width: 240px;
+    height: 40px;
+    background-color: #555;
+    color: #fcfcfc;
+    border-radius: 2px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-weight: bold;
+    transition: all 100ms;
+    box-shadow: 1px 1px 0 #ccc;
+    cursor: pointer;
+    &:hover{
+        filter: brightness(0.95);
+        box-shadow: 5px 5px 0 #ccc;    
+    }
+` 
     
 export default App;
     
