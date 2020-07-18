@@ -1,4 +1,5 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef } from 'react'
+import { triggerBase64Download } from 'react-base64-downloader';
 import styled from 'styled-components'
 import Jimp from 'jimp'
 
@@ -6,11 +7,12 @@ function App() {
     const inputPics = useRef()
     const [refPic, setRefPic] = useState()
     const [inputPicsState, setInputPicsState] = useState([])
-    const [reductionRatio, setReductionRatio] = useState(2)
-    const [inputSize, setInputSize] = useState(50)
-    const [done, setDone] = useState(false)
-    const [result, setResult] = useState()
+    const [reductionRatio, setReductionRatio] = useState(10)
+    const [inputSize, setInputSize] = useState(35)
     const [working, setWorking] = useState()
+    const [modal, setModal] = useState({
+        visible: false
+    })
 
     const loadFiles = (files, type) => {
         let filesReady = [];
@@ -52,6 +54,7 @@ function App() {
                 }
             })
 
+            setWorking(`Comparing each pixel of the reference image with the input files`) 
             const fullArray = pixelColorArr.map((px, i, arr) => {
                 return ({
                     ...px,
@@ -59,6 +62,7 @@ function App() {
                 })
             })
             
+            setWorking(`Composing the whole image`)
             stitchItAll(fullArray, w, h)
         })
     }
@@ -87,7 +91,6 @@ function App() {
     }
 
     const getClosestPic = (pixel, inputPics, i, len) => {
-        if(!(i % 100)){ setWorking(`Comparing each pixel of the reference image with the input files (${i}/${len})`) }
         const closest = inputPics.map(ip => ({
             ...ip,
             diff: getColorDifference(ip.avgColor, pixel.color)
@@ -122,43 +125,71 @@ function App() {
 
     const moveYourMoneyMaker = async () => {
         if(!Array.isArray(inputPics.current) || inputPics.current?.length === 0){
-            alert("Select input files")
+            setModal({
+                visible: true,
+                text: "Select input files"
+            })
             return
         }
         if(!refPic){
-            alert("Select reference image")
+            setModal({
+                visible: true,
+                text: "Select reference image"
+            })
             return
         }
 
-        inputPics.current.forEach((ip, i, arr) => {
-            setWorking("Reading input pics")
-            Jimp.read(ip.original, (err, pic) => {
-
-                setWorking(`Processing input pics (${i+1}/${arr.length})`)
-                const avgColor = getAvgColor(pic)
-                const croppedImage = cropImgToSquare(pic)
-                const resized = getResizedPic(croppedImage, inputSize)
-
-                inputPics.current.forEach((ip, j, arr) => {
-                    if(i === j){
-                        inputPics.current[i] = {
-                            ...inputPics.current[i],
-                            avgColor,
-                            resized
-                        }
-                    }
-                    if(arr.length === i + 1 && arr.length === j + 1){
-                        processRefImage()
+        Jimp.read(refPic, (err, pic) => {
+            const h = Math.trunc(pic.bitmap.height / reductionRatio) * inputSize
+            const w = Math.trunc(pic.bitmap.width / reductionRatio) * inputSize
+            console.log({h, w})
+            if(h > 5000 || w > 5000){
+                setWorking(" ")
+                setModal({
+                    visible: true,
+                    text: `The dimensions of the output image with the selected reduction ratio and square size will be ${w}*${h}. 
+Generating images so big can slow down your browser and even crash it.
+Do you want to continue?`,
+                    fn: () => {
+                        setModal({ visible: false })
+                        iHaveNoFear()
                     }
                 })
-            })
+            }
+            else{
+                iHaveNoFear()
+            }
         })
+
+        const iHaveNoFear = async () => {
+            inputPics.current.forEach((ip, i, arr) => {
+                setWorking("Reading input pics")
+                Jimp.read(ip.original, (err, pic) => {
+                    setWorking(`Processing input pics`)
+                    const avgColor = getAvgColor(pic)
+                    const croppedImage = cropImgToSquare(pic)
+                    const resized = getResizedPic(croppedImage, inputSize)
+
+                    inputPics.current.forEach((ip, j, arr) => {
+                        if(i === j){
+                            inputPics.current[i] = {
+                                ...inputPics.current[i],
+                                avgColor,
+                                resized
+                            }
+                        }
+                        if(arr.length === i + 1 && arr.length === j + 1){
+                            processRefImage()
+                        }
+                    })
+                })
+            })
+        }
     }
 
     const stitchItAll = (arr, w, h) => {
         new Jimp(w * inputSize, h * inputSize, 0xffffff, (err, img) => {
             arr.forEach((px, i, arr) => {
-                if(!(i % 100)){ setWorking(`Composing the whole image (${i+1}/${arr.length})`) }
                 img.composite(
                     px.composePic,
                     px.x * inputSize, 
@@ -173,9 +204,10 @@ function App() {
 
     const upAndOut = async img => {
         setWorking(`Converting to base 64...`)
+        img.quality(60)
         const b64img = await img.getBase64Async(Jimp.MIME_JPEG)
-        setResult(b64img)
-        setDone(true)
+        setWorking(`Downloading...`)
+        triggerBase64Download(b64img, `Multipic-${new Date().getTime()}`)
         setWorking(false)
     }
     
@@ -220,24 +252,75 @@ function App() {
                 <H3>Parameters</H3>
                 <InputGroup>
                     <label>Reduction ratio</label>
+                    <Info onClick={() => {
+                        setWorking(" ")
+                        setModal({
+                            visible: true,
+                            text: "This ratio will divide the size of the reference size. Per example, a 1000*800 image with a reduction ratio of 10 will have 100*80 pixels substituted with your input images",
+                            cancelText: "Umh, if you say so",
+                            okText: "OK!",
+                            fn: () => {
+                                setModal({ visible: false })
+                                setWorking(false)
+                            }
+                        })
+                    }}>
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="10 10 150 150" height="25" width="25" version="1.0">
+                            <g fill="#4b4b4b">
+                                <path d="m80 15c-35.88 0-65 29.12-65 65s29.12 65 65 65 65-29.12 65-65-29.12-65-65-65zm0 10c30.36 0 55 24.64 55 55s-24.64 55-55 55-55-24.64-55-55 24.64-55 55-55z"/>
+                                <path d="m57.373 18.231a9.3834 9.1153 0 1 1 -18.767 0 9.3834 9.1153 0 1 1 18.767 0z" transform="matrix(1.1989 0 0 1.2342 21.214 28.75)"/>
+                                <path d="m90.665 110.96c-0.069 2.73 1.211 3.5 4.327 3.82l5.008 0.1v5.12h-39.073v-5.12l5.503-0.1c3.291-0.1 4.082-1.38 4.327-3.82v-30.813c0.035-4.879-6.296-4.113-10.757-3.968v-5.074l30.665-1.105"/>
+                            </g>
+                        </svg>
+                    </Info>
                     <input value={reductionRatio} onChange={e => setReductionRatio(e.target.value)} type="number" />
                 </InputGroup>
                 <InputGroup>
-                    <label>Input size</label>
+                    <label>Square size</label>
+                    <Info onClick={() => {
+                        setWorking(" ")
+                        setModal({
+                            visible: true,
+                            text: "This is the size your input images will have in the output image. Per example, with a square size of 35, each one of the pixels of the reduced reference image will be substituted with an input image with a size of 35*35px",
+                            cancelText: "I dunno...",
+                            okText: "Gotcha!",
+                            fn: () => {
+                                setModal({ visible: false })
+                                setWorking(false)
+                            }
+                        })
+                    }}>
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="10 10 150 150" height="25" width="25" version="1.0">
+                            <g fill="#4b4b4b">
+                                <path d="m80 15c-35.88 0-65 29.12-65 65s29.12 65 65 65 65-29.12 65-65-29.12-65-65-65zm0 10c30.36 0 55 24.64 55 55s-24.64 55-55 55-55-24.64-55-55 24.64-55 55-55z"/>
+                                <path d="m57.373 18.231a9.3834 9.1153 0 1 1 -18.767 0 9.3834 9.1153 0 1 1 18.767 0z" transform="matrix(1.1989 0 0 1.2342 21.214 28.75)"/>
+                                <path d="m90.665 110.96c-0.069 2.73 1.211 3.5 4.327 3.82l5.008 0.1v5.12h-39.073v-5.12l5.503-0.1c3.291-0.1 4.082-1.38 4.327-3.82v-30.813c0.035-4.879-6.296-4.113-10.757-3.968v-5.074l30.665-1.105"/>
+                            </g>
+                        </svg>
+                    </Info>
                     <input value={inputSize} onChange={e => setInputSize(e.target.value)} type="number" />
                 </InputGroup>
             </Block>
 
             <br />
-            <TheButton onClick={() => moveYourMoneyMaker()}>Let's go!</TheButton>
+            <TheButton style={{ marginTop: "1em" }} onClick={() => moveYourMoneyMaker()}>Let's go!</TheButton>
 
-            { done && (
-                <div style={{ width: "calc(100% - 4em)", marginTop: "3em" }}>
-                    <H3>Result</H3>
-                    <Result src={result} />
-                    <TheButton onClick={e => e} style={{ marginTop: "1em" }}>Download image</TheButton>
-                </div>
+            { modal.visible && (
+                <Modal>
+                    <H3>{modal.text}</H3>
+                    <ButtonWrapper>
+                        {modal.fn && <TheButton style={{ marginRight: 10 }} onClick={() => modal.fn()}>{ modal.okText || "Continue" }</TheButton>}
+                        <TheButton onClick={() => {
+                            setModal({ visible: false })
+                            setWorking(false)
+                        }}>{ modal.cancelText || "Cancel" }</TheButton>
+                    </ButtonWrapper>
+                </Modal>
             )}
+            <CopyrightWrapper>
+                <p>2020 -&nbsp;<a href="https://alhill.dev">Al Hill</a></p>
+                <p>The source code of this application can be downloaded&nbsp;<a href="https://github.com/alhill/multipic">here</a>. Use it wisely.</p>
+            </CopyrightWrapper>
         </Container>
 
     );
@@ -252,6 +335,7 @@ const Container = styled.div`
     padding-bottom: 1em;
     height: ${({ working }) => working ? "100vh" : "auto"};
     overflow: hidden;
+    min-height: 100vh;
 `
 
 const Loader = styled.div`
@@ -278,12 +362,37 @@ const H1 = styled.h1`
     color: #666;
     font-size: 3em;
     font-family: Lexend Tera;
-    `
+`
     
-    const H3 = styled.h3`
+const H3 = styled.h3`
     font-family: Lexend Tera;
     margin-top: 0;
     color: #555;
+`
+
+const CopyrightWrapper = styled.div`
+    font-family: Lexend Tera;
+    color: #999;
+    font-size: 1em;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    flex-wrap: wrap;
+    align-items: center;
+    text-align: center;
+    justify-content: flex-end;
+    align-content: flex-end;
+    a{
+        text-decoration: none;
+        color: #666;
+        transition: all 300ms;
+        &:hover{
+            color: black;
+        }
+    }
+    p{
+        margin: 0.5em 0;
+    }
 `
 
 const ImageGrid = styled.div`
@@ -318,7 +427,6 @@ const InputGroup = styled.div`
     margin-bottom: 1em;
     align-items: center;
     label{
-        margin-right: 1em;
         color: #555;
         width: 200px;
     }
@@ -354,11 +462,6 @@ const TheButton = styled.div`
     }
 `
 
-const Result = styled.img`
-    width: 600px;
-    max-width: 90vw;
-`
-
 const CustomFile = styled.label`
     width: 240px;
     height: 40px;
@@ -377,6 +480,39 @@ const CustomFile = styled.label`
         box-shadow: 5px 5px 0 #ccc;    
     }
 ` 
+
+const Modal = styled.div`
+    position: absolute;
+    top: 100px;
+    min-width: 300px;
+    width: 60vw;
+    min-height: 240px;
+    border: 3px solid pink;
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-evenly;
+    align-items: center;
+    background-color: rgba(255, 255, 255, 0.95);
+    padding: 1em 2em;
+    z-index: 200;
+`
+const ButtonWrapper = styled.div`
+    display: flex;
+    width: 100%;
+    justify-content: space-evenly;
+`
+
+const Info = styled.div`
+    width: 25px;
+    height: 25px;
+    opacity: 0.4;
+    transition: all 300ms;
+    padding-right: 2em;
+    &:hover{
+        opacity: 0.7;
+    }
+`
     
 export default App;
     
